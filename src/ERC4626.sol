@@ -1,0 +1,275 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.4;
+
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC4626, IERC20Metadata} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+
+/**
+ * @title ERC4626
+ * @notice ERC-4626 tokenized vault implementation.
+ * @dev Deposited assets are held directly by this contract.
+ */
+contract ERC4626 is ERC20, IERC4626 {
+    IERC20 private immutable s_asset;
+
+    using Math for uint256;
+
+    /// @notice The provided asset address is invalid.
+    error InvalidAssetAddress();
+
+    /// @notice The calculated number of shares is zero.
+    error ZeroSharesNotAllowed();
+
+    /// @notice The calculated amount of assets is zero.
+    error ZeroAssetsNotAllowed();
+
+    /// @notice The provided address is the zero address.
+    error ZeroAddressNotAllowed();
+
+    /// @notice The requested amount exceeds the maximum allowed amount.
+    error MaxAmountReached();
+
+    /// @notice The underlying asset transfer failed.
+    error TransferFailed();
+
+    /// @notice The requested asset amount is insufficient.
+    error InsufficientAssets();
+
+    /// @notice The requested share amount is insufficient.
+    error InsufficientShares();
+
+    /**
+     * @notice Initializes the vault with an underlying asset.
+     * @param asset_ Address of the ERC-20 token accepted by the vault.
+     */
+    constructor(address asset_) ERC20("FomoBlock", "FBCK") {
+        if (asset_ == address(0)) revert InvalidAssetAddress();
+
+        s_asset = IERC20(asset_);
+    }
+
+    /**
+     * @inheritdoc IERC20Metadata
+     */
+    function decimals() public pure override(ERC20, IERC20Metadata) returns (uint8) {
+        return 8;
+    }
+
+    /**
+     * @inheritdoc IERC4626
+     */
+    function asset() external view returns (address) {
+        return address(s_asset);
+    }
+
+    /**
+     * @inheritdoc IERC4626
+     */
+    function totalAssets() public view returns (uint256) {
+        return s_asset.balanceOf(address(this));
+    }
+
+    /**
+     * @inheritdoc IERC4626
+     */
+    function convertToAssets(uint256 shares) external view returns (uint256) {
+        return _convertToAssets(shares, Math.Rounding.Floor);
+    }
+
+    /**
+     * @inheritdoc IERC4626
+     */
+    function convertToShares(uint256 assets) external view returns (uint256) {
+        return _convertToShares(assets, Math.Rounding.Floor);
+    }
+
+    /**
+     * @inheritdoc IERC4626
+     */
+    function maxDeposit(
+        address /* receiver */
+    )
+        public
+        pure
+        returns (uint256 maxAssets)
+    {
+        return type(uint256).max;
+    }
+
+    /**
+     * @inheritdoc IERC4626
+     */
+    function previewDeposit(uint256 assets) public view returns (uint256) {
+        return _convertToShares(assets, Math.Rounding.Floor);
+    }
+
+    /**
+     * @inheritdoc IERC4626
+     */
+    function maxMint(
+        address /* receiver */
+    )
+        public
+        pure
+        returns (uint256)
+    {
+        return type(uint256).max;
+    }
+
+    /**
+     * @inheritdoc IERC4626
+     */
+    function previewMint(uint256 shares) public view returns (uint256) {
+        return _convertToAssets(shares, Math.Rounding.Ceil);
+    }
+
+    /**
+     * @inheritdoc IERC4626
+     */
+    function maxWithdraw(address owner) public view returns (uint256) {
+        return previewRedeem(maxRedeem(owner));
+    }
+
+    /**
+     * @inheritdoc IERC4626
+     */
+    function previewWithdraw(uint256 assets) public view returns (uint256) {
+        return _convertToShares(assets, Math.Rounding.Ceil);
+    }
+
+    /**
+     * @inheritdoc IERC4626
+     */
+    function maxRedeem(address owner) public view returns (uint256) {
+        return balanceOf(owner);
+    }
+
+    /**
+     * @inheritdoc IERC4626
+     */
+    function previewRedeem(uint256 shares) public view returns (uint256) {
+        return _convertToAssets(shares, Math.Rounding.Floor);
+    }
+
+    /**
+     * @notice Converts vault shares into underlying assets.
+     * @dev Uses the current asset-to-share exchange rate.
+     *      When the vault is empty, shares and assets are treated
+     *      as having a 1:1 ratio.
+     * @param shares Amount of vault shares.
+     * @param rounding Rounding direction used for the conversion.
+     * @return assets Amount of underlying assets corresponding to the shares.
+     */
+    function _convertToAssets(uint256 shares, Math.Rounding rounding) internal view returns (uint256 assets) {
+        if (totalAssets() == 0 && totalSupply() == 0) {
+            assets = shares;
+        } else {
+            assets = shares.mulDiv(totalAssets(), totalSupply(), rounding);
+        }
+    }
+
+    /**
+     * @notice Converts underlying assets into vault shares.
+     * @dev Uses the current asset-to-share exchange rate.
+     *      When the vault is empty, assets and shares are treated
+     *      as having a 1:1 ratio.
+     * @param assets Amount of underlying assets.
+     * @param rounding Rounding direction used for the conversion.
+     * @return shares Amount of vault shares corresponding to the assets.
+     */
+    function _convertToShares(uint256 assets, Math.Rounding rounding) internal view returns (uint256 shares) {
+        if (totalAssets() == 0 && totalSupply() == 0) {
+            shares = assets;
+        } else {
+            shares = assets.mulDiv(totalSupply(), totalAssets(), rounding);
+        }
+    }
+
+    /**
+     * @inheritdoc IERC4626
+     */
+    function deposit(uint256 assets, address receiver) external returns (uint256) {
+        if (receiver == address(0)) revert ZeroAddressNotAllowed();
+        if (assets > maxDeposit(receiver)) revert MaxAmountReached();
+
+        uint256 shares = previewDeposit(assets);
+        if (shares == 0) revert ZeroSharesNotAllowed();
+
+        bool success = s_asset.transferFrom(msg.sender, address(this), assets);
+        if (!success) revert TransferFailed();
+
+        _mint(receiver, shares);
+
+        emit Deposit(msg.sender, address(this), assets, shares);
+
+        return shares;
+    }
+
+    /**
+     * @inheritdoc IERC4626
+     */
+    function mint(uint256 shares, address receiver) external returns (uint256) {
+        if (receiver == address(0)) revert ZeroAddressNotAllowed();
+        if (shares > maxMint(receiver)) revert MaxAmountReached();
+
+        uint256 assets = previewMint(shares);
+        if (assets == 0) revert ZeroAssetsNotAllowed();
+
+        bool success = s_asset.transferFrom(msg.sender, address(this), assets);
+        if (!success) revert TransferFailed();
+
+        _mint(receiver, shares);
+
+        emit Deposit(msg.sender, address(this), assets, shares);
+
+        return assets;
+    }
+
+    /**
+     * @inheritdoc IERC4626
+     */
+    function withdraw(uint256 assets, address receiver, address owner) external returns (uint256) {
+        if (receiver == address(0) || owner == address(0)) revert ZeroAddressNotAllowed();
+        if (assets > maxWithdraw(owner)) revert InsufficientShares();
+
+        uint256 shares = previewWithdraw(assets);
+
+        if (msg.sender != owner) {
+            _spendAllowance(owner, msg.sender, shares);
+        }
+
+        _burn(owner, shares);
+
+        bool success = s_asset.transfer(receiver, assets);
+        if (!success) revert TransferFailed();
+
+        emit Withdraw(msg.sender, receiver, owner, assets, shares);
+
+        return shares;
+    }
+
+    /**
+     * @inheritdoc IERC4626
+     */
+    function redeem(uint256 shares, address receiver, address owner) external returns (uint256) {
+        if (receiver == address(0) || owner == address(0)) revert ZeroAddressNotAllowed();
+        if (shares > maxRedeem(owner)) revert InsufficientShares();
+
+        if (msg.sender != owner) {
+            _spendAllowance(owner, msg.sender, shares);
+        }
+
+        uint256 assets = previewRedeem(shares);
+
+        _burn(owner, shares);
+
+        bool success = s_asset.transfer(receiver, assets);
+        if (!success) revert TransferFailed();
+
+        emit Withdraw(msg.sender, receiver, owner, assets, shares);
+
+        return assets;
+    }
+}
