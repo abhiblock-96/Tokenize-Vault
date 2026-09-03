@@ -29,7 +29,7 @@ contract ERC4626 is ERC20, IERC4626 {
     error ZeroAddressNotAllowed();
 
     /// @notice The requested amount exceeds the maximum allowed amount.
-    error MaxAmountReached();
+    error AmountGreaterThanMaxAmount();
 
     /// @notice The underlying asset transfer failed.
     error TransferFailed();
@@ -95,7 +95,7 @@ contract ERC4626 is ERC20, IERC4626 {
         pure
         returns (uint256 maxAssets)
     {
-        return type(uint256).max;
+        return type(uint128).max;
     }
 
     /**
@@ -115,7 +115,7 @@ contract ERC4626 is ERC20, IERC4626 {
         pure
         returns (uint256)
     {
-        return type(uint256).max;
+        return type(uint128).max;
     }
 
     /**
@@ -192,7 +192,7 @@ contract ERC4626 is ERC20, IERC4626 {
      */
     function deposit(uint256 assets, address receiver) external returns (uint256) {
         if (receiver == address(0)) revert ZeroAddressNotAllowed();
-        if (assets > maxDeposit(receiver)) revert MaxAmountReached();
+        if (assets > maxDeposit(receiver)) revert AmountGreaterThanMaxAmount();
 
         uint256 shares = previewDeposit(assets);
         if (shares == 0) revert ZeroSharesNotAllowed();
@@ -212,7 +212,7 @@ contract ERC4626 is ERC20, IERC4626 {
      */
     function mint(uint256 shares, address receiver) external returns (uint256) {
         if (receiver == address(0)) revert ZeroAddressNotAllowed();
-        if (shares > maxMint(receiver)) revert MaxAmountReached();
+        if (shares > maxMint(receiver)) revert AmountGreaterThanMaxAmount();
 
         uint256 assets = previewMint(shares);
         if (assets == 0) revert ZeroAssetsNotAllowed();
