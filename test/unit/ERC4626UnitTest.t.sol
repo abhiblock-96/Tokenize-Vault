@@ -9,20 +9,22 @@ import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.so
 /**
  * @title ERC4626UnitTest
  * @notice Unit tests for the ERC4626 vault implementation.
- * @dev Tests vault metadata, asset/share conversions, limits, preview functions,
- *      deposits, mints, withdrawals, redemptions, exchange-rate behavior,
- *      and the ERC4626 inflation attack.
+ * @dev Covers vault metadata, asset/share conversions, deposit and mint limits,
+ *      preview functions, deposits, mints, withdrawals, redemptions,
+ *      exchange-rate behavior, and inflation-attack mitigation.
  */
 contract ERC4626UnitTest is BaseContract {
     /**
-     * @notice Tests that `asset()` returns the address of the underlying asset.
+     * @notice Verifies that `asset()` returns the address of the vault's
+     *         underlying asset.
      */
     function test_asset_ReturnsUnderlyingAssetAddress() external view {
         assertEq(tokenVault.asset(), address(usdt));
     }
 
     /**
-     * @notice Tests that `totalAssets()` returns the total assets held by the vault.
+     * @notice Verifies that `totalAssets()` equals the total underlying assets
+     *         accounted for by the vault.
      */
     function test_totalAssets_ReturnsTotalAssetsHeldByVault() external {
         _deposit(user1, depositAmt);
@@ -32,38 +34,45 @@ contract ERC4626UnitTest is BaseContract {
     }
 
     /**
-     * @notice Tests conversion of shares into assets when the exchange rate is 1:1.
+     * @notice Verifies that `convertToAssets()` converts shares to assets
+     *         according to the current exchange rate.
+     * @dev With the initial virtual asset/share configuration, 500,000 shares
+     *      correspond to 500 underlying assets.
      */
     function test_convertToAssets_ReturnsAmountOfAssets() external view {
-        assertEq(tokenVault.convertToAssets(500), 500);
+        assertEq(tokenVault.convertToAssets(500000), 500);
     }
 
     /**
-     * @notice Tests conversion of assets into shares when the exchange rate is 1:1.
+     * @notice Verifies that `convertToShares()` converts assets to shares
+     *         according to the current exchange rate.
+     * @dev With the initial virtual asset/share configuration, 400 assets
+     *      correspond to 400,000 shares.
      */
     function test_convertToShares_ReturnsAmountOfShares() external view {
-        assertEq(tokenVault.convertToShares(400), 400);
+        assertEq(tokenVault.convertToShares(400), 400000);
     }
 
     /**
-     * @notice Tests that `maxDeposit()` returns the maximum amount of assets
-     *         that can be deposited.
+     * @notice Verifies that `maxDeposit()` returns the maximum amount of
+     *         underlying assets that an account can deposit.
      */
     function test_maxDeposit_ReturnsMaximumAssetsThatCanBeDeposited() external view {
         assertEq(tokenVault.maxDeposit(user1), type(uint128).max);
     }
 
     /**
-     * @notice Tests that `maxMint()` returns the maximum amount of shares
-     *         that can be minted.
+     * @notice Verifies that `maxMint()` returns the maximum number of shares
+     *         that an account can mint.
      */
     function test_maxMint_ReturnsMaximumSharesThatCanBeMinted() external view {
         assertEq(tokenVault.maxMint(user1), type(uint128).max);
     }
 
     /**
-     * @notice Tests that `maxRedeem()` returns the maximum number of shares
-     *         that the owner can redeem.
+     * @notice Verifies that `maxRedeem()` returns the maximum number of shares
+     *         that an account can redeem.
+     * @dev The maximum redeemable amount is the owner's current share balance.
      */
     function test_maxRedeem_ReturnsMaximumSharesThatCanBeRedeemed() external {
         _deposit(user1, depositAmt);
@@ -73,8 +82,8 @@ contract ERC4626UnitTest is BaseContract {
     }
 
     /**
-     * @notice Tests that `maxWithdraw()` returns the maximum amount of assets
-     *         that the owner can withdraw using all available shares.
+     * @notice Verifies that `maxWithdraw()` returns the maximum amount of
+     *         assets that an account can withdraw using its available shares.
      */
     function test_maxWithdraw_ReturnsMaximumAssetsThatCanBeWithdrawn() external {
         _deposit(user1, depositAmt);
@@ -84,9 +93,11 @@ contract ERC4626UnitTest is BaseContract {
     }
 
     /**
-     * @notice Tests that `previewDeposit()` returns the number of shares
-     *         received for a given amount of assets.
-     * @dev ERC4626 deposit conversion rounds down.
+     * @notice Verifies that `previewDeposit()` returns the number of shares
+     *         that would be minted for a given asset deposit.
+     * @dev ERC4626 deposit conversions round down in favor of the vault.
+     *      A direct asset donation changes the conversion rate without
+     *      increasing the share supply.
      */
     function test_previewDeposit_ReturnsSharesReceivedForAssets() external {
         _deposit(user1, depositAmt);
@@ -95,14 +106,15 @@ contract ERC4626UnitTest is BaseContract {
         vm.prank(user2);
         usdt.transfer(address(tokenVault), 333);
 
-        // Conversion rounds down.
-        assertEq(tokenVault.previewDeposit(550), 330);
+        // The conversion rounds down to the nearest whole share.
+        assertEq(tokenVault.previewDeposit(550), 330395);
     }
 
     /**
-     * @notice Tests that `previewMint()` returns the amount of assets
-     *         required to mint a given number of shares.
-     * @dev ERC4626 mint conversion rounds up.
+     * @notice Verifies that `previewMint()` returns the amount of assets
+     *         required to mint a specified number of shares.
+     * @dev ERC4626 mint conversions round up so that the vault receives
+     *      enough assets to issue the requested number of shares.
      */
     function test_previewMint_ReturnsAssetsRequiredForShares() external {
         _mint(mintAmt);
@@ -111,14 +123,15 @@ contract ERC4626UnitTest is BaseContract {
         vm.prank(user2);
         usdt.transfer(address(tokenVault), 333);
 
-        // Conversion rounds up.
-        assertEq(tokenVault.previewMint(550), 917);
+        // The conversion rounds up to ensure sufficient assets are deposited.
+        assertEq(tokenVault.previewMint(550), 123);
     }
 
     /**
-     * @notice Tests that `previewWithdraw()` returns the number of shares
-     *         that must be burned to withdraw a given amount of assets.
-     * @dev ERC4626 withdrawal conversion rounds up.
+     * @notice Verifies that `previewWithdraw()` returns the number of shares
+     *         required to withdraw a specified amount of assets.
+     * @dev ERC4626 withdrawal conversions round up so that enough shares are
+     *      burned to cover the requested asset amount.
      */
     function test_previewWithdraw_ReturnsSharesRequiredForAssets() external {
         _deposit(user1, depositAmt);
@@ -126,14 +139,14 @@ contract ERC4626UnitTest is BaseContract {
         vm.prank(user2);
         usdt.transfer(address(tokenVault), 333);
 
-        // Conversion rounds up.
-        assertEq(tokenVault.previewWithdraw(550), 331);
+        // The conversion rounds up to ensure the requested assets can be withdrawn.
+        assertEq(tokenVault.previewWithdraw(550), 330396);
     }
 
     /**
-     * @notice Tests that `previewRedeem()` returns the amount of assets
-     *         received when redeeming a given number of shares.
-     * @dev ERC4626 redemption conversion rounds down.
+     * @notice Verifies that `previewRedeem()` returns the amount of assets
+     *         that would be received for redeeming a specified number of shares.
+     * @dev ERC4626 redemption conversions round down in favor of the vault.
      */
     function test_previewRedeem_ReturnsAssetsReceivedForShares() external {
         _deposit(user1, depositAmt);
@@ -141,13 +154,13 @@ contract ERC4626UnitTest is BaseContract {
         vm.prank(user2);
         usdt.transfer(address(tokenVault), 333);
 
-        // Conversion rounds down.
-        assertEq(tokenVault.previewRedeem(550), 916);
+        // The conversion rounds down to the nearest whole asset.
+        assertEq(tokenVault.previewRedeem(tokenVault.balanceOf(user1)), 832);
     }
 
     /**
-     * @notice Tests that a deposit mints the exact number of shares
-     *         returned by `previewDeposit()`.
+     * @notice Verifies that `deposit()` mints the exact number of shares
+     *         returned by `previewDeposit()` for the same asset amount.
      */
     function test_deposit_MintsExpectedAmountOfShares() external {
         _deposit(user1, depositAmt);
@@ -155,7 +168,8 @@ contract ERC4626UnitTest is BaseContract {
     }
 
     /**
-     * @notice Tests that `deposit()` reverts when the receiver is the zero address.
+     * @notice Verifies that `deposit()` reverts when the receiver is the
+     *         zero address.
      */
     function test_deposit_RevertsIfReceiverIsZeroAddress() external {
         vm.prank(user1);
@@ -164,8 +178,8 @@ contract ERC4626UnitTest is BaseContract {
     }
 
     /**
-     * @notice Tests that `deposit()` reverts when the requested assets
-     *         exceed the maximum permitted amount.
+     * @notice Verifies that `deposit()` reverts when the requested asset amount
+     *         exceeds the maximum permitted deposit amount.
      */
     function test_deposit_RevertsIfAssetsExceedMaxAmount() external {
         vm.prank(user1);
@@ -174,7 +188,8 @@ contract ERC4626UnitTest is BaseContract {
     }
 
     /**
-     * @notice Tests that `deposit()` emits the correct ERC4626 Deposit event.
+     * @notice Verifies that `deposit()` emits the expected ERC4626 `Deposit`
+     *         event with the correct caller, receiver, assets, and shares.
      */
     function test_deposit_EmitsDepositEvent() external {
         _approve(user1);
@@ -187,8 +202,8 @@ contract ERC4626UnitTest is BaseContract {
     }
 
     /**
-     * @notice Tests that `mint()` mints exactly the requested number of shares
-     *         and charges the user the required amount of assets.
+     * @notice Verifies that `mint()` mints exactly the requested number of
+     *         shares and charges the caller the required amount of assets.
      */
     function test_mint_MintsExactAmountOfShares() external {
         uint256 userAssetsBefore = usdt.balanceOf(user1);
@@ -203,7 +218,8 @@ contract ERC4626UnitTest is BaseContract {
     }
 
     /**
-     * @notice Tests that `mint()` reverts when the receiver is the zero address.
+     * @notice Verifies that `mint()` reverts when the receiver is the
+     *         zero address.
      */
     function test_mint_RevertsIfReceiverIsZeroAddress() external {
         vm.expectRevert(ERC4626.ZeroAddressNotAllowed.selector);
@@ -211,8 +227,8 @@ contract ERC4626UnitTest is BaseContract {
     }
 
     /**
-     * @notice Tests that `mint()` reverts when the requested shares
-     *         exceed the maximum permitted amount.
+     * @notice Verifies that `mint()` reverts when the requested share amount
+     *         exceeds the maximum permitted mint amount.
      */
     function test_mint_RevertsIfSharesExceedMaxAmount() external {
         vm.expectRevert(ERC4626.AmountGreaterThanMaxAmount.selector);
@@ -220,9 +236,10 @@ contract ERC4626UnitTest is BaseContract {
     }
 
     /**
-     * @notice Tests that `mint()` emits the correct ERC4626 Deposit event.
-     * @dev For `mint()`, the event contains the assets required to mint
-     *      the requested shares and the requested share amount.
+     * @notice Verifies that `mint()` emits the expected ERC4626 `Deposit`
+     *         event with the required assets and requested shares.
+     * @dev Unlike `deposit()`, the caller specifies the share amount and the
+     *      vault calculates the required asset amount.
      */
     function test_mint_EmitsDepositEvent() external {
         _approve(user1);
@@ -235,8 +252,8 @@ contract ERC4626UnitTest is BaseContract {
     }
 
     /**
-     * @notice Tests that `withdraw()` burns the expected number of shares
-     *         and removes the requested assets from the vault.
+     * @notice Verifies that `withdraw()` transfers the exact requested asset
+     *         amount to the receiver and burns the corresponding shares.
      */
     function test_withdraw_WithdrawsExactAssets() external {
         _deposit(user1, depositAmt);
@@ -254,7 +271,8 @@ contract ERC4626UnitTest is BaseContract {
     }
 
     /**
-     * @notice Tests that `withdraw()` reverts when the receiver is the zero address.
+     * @notice Verifies that `withdraw()` reverts when the receiver is the
+     *         zero address.
      */
     function test_withdraw_RevertsIfReceiverIsZeroAddress() external {
         _deposit(user1, depositAmt);
@@ -266,7 +284,8 @@ contract ERC4626UnitTest is BaseContract {
     }
 
     /**
-     * @notice Tests that `withdraw()` reverts when the owner is the zero address.
+     * @notice Verifies that `withdraw()` reverts when the owner is the
+     *         zero address.
      */
     function test_withdraw_RevertsIfOwnerIsZeroAddress() external {
         _deposit(user1, depositAmt);
@@ -278,8 +297,8 @@ contract ERC4626UnitTest is BaseContract {
     }
 
     /**
-     * @notice Tests that `withdraw()` reverts when the requested assets
-     *         require more shares than the owner possesses.
+     * @notice Verifies that `withdraw()` reverts when the owner does not have
+     *         enough shares to cover the requested asset amount.
      */
     function test_withdraw_RevertsIfAssetsExceedAvailableShares() external {
         _deposit(user1, depositAmt);
@@ -289,37 +308,46 @@ contract ERC4626UnitTest is BaseContract {
     }
 
     /**
-     * @notice Tests that `withdraw()` reverts when an unauthorized caller
-     *         attempts to withdraw another user's assets.
+     * @notice Verifies that an unauthorized caller cannot withdraw assets
+     *         from another user's share balance.
+     * @dev The caller has no allowance from the share owner, so the operation
+     *      must revert with `ERC20InsufficientAllowance`.
      */
     function test_withdraw_RevertsIfCallerIsNotAllowed() external {
         _deposit(user1, depositAmt);
+        uint256 sharesBal = tokenVault.previewWithdraw(withdrawlAmt);
 
         vm.prank(user2);
-        vm.expectRevert(
-            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, user2, 0, withdrawlAmt)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, user2, 0, sharesBal));
+
         tokenVault.withdraw(withdrawlAmt, user1, user1);
     }
 
     /**
-     * @notice Tests that an approved spender can withdraw assets
-     *         on behalf of the share owner.
+     * @notice Verifies that an approved spender can withdraw assets on behalf
+     *         of the share owner.
      */
     function test_withdraw_AllowsApprovedSpenderToWithdraw() external {
         _deposit(user1, depositAmt);
+        uint256 shares = tokenVault.previewWithdraw(withdrawlAmt);
+
+        uint256 sharesBalBefore = tokenVault.balanceOf(user1);
 
         vm.prank(user1);
-        tokenVault.approve(operator, withdrawlAmt);
+        tokenVault.approve(operator, shares);
 
         vm.prank(operator);
         tokenVault.withdraw(withdrawlAmt, user2, user1);
 
+        uint256 sharesBalAfter = tokenVault.balanceOf(user1);
+
+        assertEq(sharesBalBefore - sharesBalAfter, shares);
         assertEq(tokenVault.totalAssets(), 100);
     }
 
     /**
-     * @notice Tests that `withdraw()` emits the correct ERC4626 Withdraw event.
+     * @notice Verifies that `withdraw()` emits the expected ERC4626 `Withdraw`
+     *         event with the correct owner, receiver, assets, and shares.
      */
     function test_withdraw_EmitsWithdrawEvent() external {
         _deposit(user1, depositAmt);
@@ -330,13 +358,14 @@ contract ERC4626UnitTest is BaseContract {
     }
 
     /**
-     * @notice Tests that `redeem()` burns the requested number of shares
-     *         and removes the corresponding assets from the vault.
+     * @notice Verifies that `redeem()` burns exactly the requested number of
+     *         shares and transfers the corresponding assets.
      */
     function test_redeem_BurnsExactAmountOfShares() external {
         _deposit(user1, depositAmt);
 
         uint256 userSharesBefore = tokenVault.balanceOf(user1);
+        uint256 redeemAmt = redeemAmt * 10 ** 3;
 
         _redeem(redeemAmt);
 
@@ -347,7 +376,8 @@ contract ERC4626UnitTest is BaseContract {
     }
 
     /**
-     * @notice Tests that `redeem()` reverts when the receiver is the zero address.
+     * @notice Verifies that `redeem()` reverts when the receiver is the
+     *         zero address.
      */
     function test_redeem_RevertsIfReceiverIsZeroAddress() external {
         _deposit(user1, depositAmt);
@@ -359,7 +389,8 @@ contract ERC4626UnitTest is BaseContract {
     }
 
     /**
-     * @notice Tests that `redeem()` reverts when the owner is the zero address.
+     * @notice Verifies that `redeem()` reverts when the owner is the
+     *         zero address.
      */
     function test_redeem_RevertsIfOwnerIsZeroAddress() external {
         _deposit(user1, depositAmt);
@@ -371,8 +402,8 @@ contract ERC4626UnitTest is BaseContract {
     }
 
     /**
-     * @notice Tests that `redeem()` reverts when an unauthorized caller
-     *         attempts to redeem another user's shares.
+     * @notice Verifies that an unauthorized caller cannot redeem another
+     *         user's shares without sufficient allowance.
      */
     function test_redeem_RevertsIfCallerIsNotApproved() external {
         _deposit(user1, depositAmt);
@@ -384,8 +415,8 @@ contract ERC4626UnitTest is BaseContract {
     }
 
     /**
-     * @notice Tests that an approved spender can redeem shares
-     *         on behalf of the share owner.
+     * @notice Verifies that an approved spender can redeem shares on behalf
+     *         of the share owner.
      */
     function test_redeem_AllowsApprovedSpenderToRedeem() external {
         _deposit(user1, depositAmt);
@@ -404,88 +435,200 @@ contract ERC4626UnitTest is BaseContract {
     }
 
     /**
-     * @notice Tests that the vault's exchange rate changes when assets
-     *         are transferred directly to the vault.
-     * @dev Direct asset transfers increase the vault's asset balance without
-     *      increasing the total share supply.
+     * @notice Verifies that a direct asset donation changes the vault's
+     *         asset/share conversion rate.
+     * @dev A direct transfer of the underlying asset increases the vault's
+     *      asset balance without minting additional shares. As a result,
+     *      subsequent conversions use a different exchange rate.
      */
     function test_exchangeRate_ChangesAfterAssetDonation() external {
+        // Before any deposits, verify the initial conversion rate.
+        uint256 shares = tokenVault.convertToShares(1000);
+
+        assertEq(shares, 1_000_000);
+
+        // ---------------------------------------------------------------------
+        // Initial deposit.
+        //
+        // 1,000 assets are deposited and shares are minted according to
+        // the initial exchange rate.
+        // ---------------------------------------------------------------------
         _deposit(user1, 1000);
 
-        assertEq(tokenVault.convertToShares(1000), 1000);
+        assertEq(tokenVault.convertToShares(1000), 1_000_000);
 
+        // ---------------------------------------------------------------------
+        // Second deposit.
+        //
+        // Another 500 assets are deposited. Since assets and shares increase
+        // proportionally, the conversion rate remains unchanged.
+        // ---------------------------------------------------------------------
+        _deposit(user2, 500);
+
+        assertEq(tokenVault.convertToShares(500), 500_000);
+
+        // ---------------------------------------------------------------------
+        // Direct asset donation.
+        //
+        // user2 transfers 500 assets directly to the vault. No shares are
+        // minted because this transfer does not call `deposit()`.
+        //
+        // Before donation:
+        //      totalAssets = 1,500
+        //      totalSupply = 1,500,000
+        //
+        // After donation:
+        //      totalAssets = 2,000
+        //      totalSupply = 1,500,000
+        //
+        // Therefore, the exchange rate changes.
+        // ---------------------------------------------------------------------
         vm.prank(user2);
         usdt.transfer(address(tokenVault), 500);
 
-        assertEq(tokenVault.convertToShares(150), 100);
-        assertEq(tokenVault.convertToAssets(100), 150);
+        // 250 assets now convert to fewer shares because the vault contains
+        // additional assets that are not represented by additional shares.
+        assertEq(tokenVault.convertToShares(250), 187_531);
+
+        // The resulting shares convert back to 249 assets because
+        // convertToAssets() rounds down.
+        assertEq(tokenVault.convertToAssets(187_531), 249);
     }
 
     ///////////////////////////// INFLATION ATTACK /////////////////////////////
 
     /**
-     * @notice Demonstrates the ERC4626 inflation attack caused by direct donations.
-     * @dev The attacker first deposits a minimal amount of assets to obtain shares,
-     *      then directly donates additional assets to the vault without receiving
-     *      any additional shares. This artificially increases the vault's
-     *      assets-per-share exchange rate.
+     * @notice Verifies that a direct asset donation cannot cause a subsequent
+     *         depositor to lose their deposited assets through an ERC-4626
+     *         inflation attack.
+     * @dev The test simulates an attacker depositing a minimal amount of assets
+     *      and then donating additional assets directly to the vault. Because the
+     *      donation does not mint shares, it changes the vault's asset/share ratio.
      *
-     *      When a subsequent depositor deposits assets, the inflated exchange rate
-     *      causes the number of shares calculated for the depositor to round down.
-     *      In the vulnerable implementation, the depositor may receive zero shares
-     *      while their assets remain in the vault, allowing the attacker to
-     *      redeem the vault's assets through their existing shares.
+     *      A victim then deposits assets after the donation. The vault's virtual
+     *      assets, virtual shares, and decimal offset prevent the attacker from
+     *      manipulating share issuance to the point where the victim receives
+     *      zero shares.
      *
-     *      This test intentionally demonstrates the vulnerable behavior and is
-     *      expected to be updated when an inflation-attack mitigation, such as
-     *      virtual assets and shares, is implemented.
+     *      The test verifies that:
+     *      - The donation increases totalAssets without increasing totalSupply.
+     *      - The victim receives a non-zero number of shares.
+     *      - The victim can redeem their shares for the assets represented by them.
+     *      - The attacker can redeem only their own shares and cannot redeem the
+     *        victim's shares or assets.
      */
-    function test_inflationAttack_DonationDilutesNextDepositor() external {
-        // Attacker makes the initial deposit and receives 1 share.
-        // At this point, the vault has 1 asset and 1 share:
-        // 1 asset = 1 share.
+    function test_inflationAttack_DonationDoesNotStealVictimDeposit() external {
+        // -------------------------------------------------------------------------
+        // 1. Attacker makes the initial deposit.
+        //
+        // The attacker deposits only 1 asset. Because this vault uses a decimal
+        // offset, 1 asset corresponds to 1,000 shares in the initial exchange
+        // calculation.
+        // -------------------------------------------------------------------------
         _deposit(hacker, 1);
 
-        // The initial exchange rate is 1 asset per share.
-        assertEq(tokenVault.balanceOf(hacker), 1);
+        uint256 hackerShares = tokenVault.balanceOf(hacker);
 
-        // The attacker directly donates 10,000 assets to the vault.
-        // The donation increases totalAssets() but does not mint any shares.
-        // This artificially increases the asset/share exchange rate.
+        assertEq(hackerShares, 1_000);
+
+        // -------------------------------------------------------------------------
+        // 2. Attacker directly donates assets to the vault.
+        //
+        // The transfer does not go through deposit(), so no shares are minted.
+        // Only the vault's underlying asset balance increases.
+        //
+        // Therefore:
+        //      totalAssets  -> increases from 1 to 1,001
+        //      totalSupply  -> remains 1,000
+        //      hackerShares -> remains 1,000
+        //
+        // This is the mechanism exploited by an ERC-4626 inflation attack:
+        // an attacker attempts to manipulate the asset/share ratio by donating
+        // assets before another user deposits.
+        // -------------------------------------------------------------------------
         vm.prank(hacker);
-        usdt.transfer(address(tokenVault), 10000);
+        usdt.transfer(address(tokenVault), 1_000);
 
-        // The attacker still owns only 1 share because donations
-        // do not result in additional share issuance.
-        assertEq(tokenVault.balanceOf(hacker), 1);
+        // A direct donation must not mint additional shares.
+        assertEq(tokenVault.balanceOf(hacker), hackerShares);
 
-        // The victim deposits 1,000 assets.
-        // Because the vault's asset/share ratio has been heavily inflated
-        // by the attacker's donation, the calculated shares are rounded down.
-        _deposit(user1, 1000);
+        // The donated assets are now part of the vault's total asset balance.
+        assertEq(tokenVault.totalAssets(), 1_001);
 
-        // The victim receives 0 shares due to integer division rounding.
-        // The deposited assets nevertheless remain inside the vault.
-        assertEq(tokenVault.balanceOf(user1), 0);
+        // Since the donation was not a deposit, the total share supply is unchanged.
+        assertEq(tokenVault.totalSupply(), 1_000);
 
-        // The vault now contains the attacker's initial 1 asset,
-        // the 10,000 asset donation, and the victim's 1,000 asset deposit.
-        assertEq(tokenVault.totalAssets(), 11001);
+        // -------------------------------------------------------------------------
+        // 3. Victim deposits after the donation.
+        //
+        // The victim is depositing into a vault whose asset/share ratio has been
+        // affected by the attacker's donation.
+        //
+        // The inflation-attack mitigation must ensure that the victim still
+        // receives a meaningful share balance instead of rounding down to zero.
+        // -------------------------------------------------------------------------
+        _deposit(user1, 500);
 
-        // The attacker owns the only outstanding share and can therefore
-        // redeem the entire vault balance, including the victim's deposit.
-        uint256 shares = tokenVault.balanceOf(hacker);
+        uint256 victimShares = tokenVault.balanceOf(user1);
+
+        // A successful inflation attack would attempt to make the victim receive
+        // zero shares for their deposit. The mitigation must prevent that.
+        assertGt(victimShares, 0);
+
+        // This is the expected result for the current virtual asset/share and
+        // decimal-offset configuration of the vault.
+        assertEq(victimShares, 998);
+
+        // -------------------------------------------------------------------------
+        // 4. Calculate the assets represented by the victim's shares.
+        //
+        // previewRedeem() performs the same conversion used by redeem() without
+        // changing the vault's state.
+        // -------------------------------------------------------------------------
+        uint256 victimAssets = tokenVault.previewRedeem(victimShares);
+
+        uint256 victimBalanceBefore = usdt.balanceOf(user1);
+
+        // -------------------------------------------------------------------------
+        // 5. Victim redeems all of their shares.
+        //
+        // The victim should receive the assets represented by their shares.
+        // -------------------------------------------------------------------------
+        vm.prank(user1);
+
+        uint256 victimAssetsReceived = tokenVault.redeem(victimShares, user1, user1);
+
+        uint256 victimBalanceAfter = usdt.balanceOf(user1);
+
+        // redeem() should return the same amount calculated by previewRedeem().
+        assertEq(victimAssetsReceived, victimAssets);
+
+        // Confirm that the victim's actual asset balance increased by the
+        // expected redemption amount.
+        assertEq(victimBalanceAfter - victimBalanceBefore, victimAssets);
+
+        // -------------------------------------------------------------------------
+        // 6. Attacker redeems their own shares.
+        //
+        // The attacker can redeem the shares they originally received, but they
+        // must not be able to redeem the victim's shares or otherwise claim the
+        // victim's deposited assets.
+        // -------------------------------------------------------------------------
+        uint256 hackerBalanceBefore = usdt.balanceOf(hacker);
+
+        uint256 hackerAssets = tokenVault.previewRedeem(hackerShares);
 
         vm.prank(hacker);
-        tokenVault.redeem(shares, hacker, hacker);
 
-        // After redeeming the attacker's only share, all assets have been
-        // withdrawn from the vault. The victim received no shares and
-        // therefore has no claim on the deposited assets.
-        assertEq(tokenVault.totalAssets(), 0);
+        uint256 hackerAssetsReceived = tokenVault.redeem(hackerShares, hacker, hacker);
 
-        // The attacker ends up with the entire vault balance:
-        // initial deposit + donation + victim's deposit = 11,001 USDT.
-        assertEq(usdt.balanceOf(hacker), 11001);
+        uint256 hackerBalanceAfter = usdt.balanceOf(hacker);
+
+        // redeem() should return the amount predicted by previewRedeem().
+        assertEq(hackerAssetsReceived, hackerAssets);
+
+        // Confirm that the attacker received only the assets represented by
+        // their own shares.
+        assertEq(hackerBalanceAfter - hackerBalanceBefore, hackerAssets);
     }
 }

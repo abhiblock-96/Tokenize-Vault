@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.4;
 
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IERC4626, IERC20Metadata} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {ERC20, IERC20, IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /**
@@ -13,6 +13,8 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
  */
 contract ERC4626 is ERC20, IERC4626 {
     IERC20 private immutable s_asset;
+
+    uint8 private immutable underlyingDecimals;
 
     using Math for uint256;
 
@@ -48,13 +50,20 @@ contract ERC4626 is ERC20, IERC4626 {
         if (asset_ == address(0)) revert InvalidAssetAddress();
 
         s_asset = IERC20(asset_);
+
+        (bool success, uint8 assetDecimals) = SafeERC20.tryGetDecimals(s_asset);
+        underlyingDecimals = success ? assetDecimals : 18;
     }
 
     /**
      * @inheritdoc IERC20Metadata
      */
-    function decimals() public pure override(ERC20, IERC20Metadata) returns (uint8) {
-        return 8;
+    function decimals() public view override(ERC20, IERC20Metadata) returns (uint8) {
+        return underlyingDecimals + _decimalsOffset();
+    }
+
+    function _decimalsOffset() internal pure returns (uint8) {
+        return 3;
     }
 
     /**
@@ -163,11 +172,7 @@ contract ERC4626 is ERC20, IERC4626 {
      * @return assets Amount of underlying assets corresponding to the shares.
      */
     function _convertToAssets(uint256 shares, Math.Rounding rounding) internal view returns (uint256 assets) {
-        if (totalAssets() == 0 && totalSupply() == 0) {
-            assets = shares;
-        } else {
-            assets = shares.mulDiv(totalAssets(), totalSupply(), rounding);
-        }
+        assets = shares.mulDiv(totalAssets() + 1, totalSupply() + 10 ** _decimalsOffset(), rounding);
     }
 
     /**
@@ -180,11 +185,7 @@ contract ERC4626 is ERC20, IERC4626 {
      * @return shares Amount of vault shares corresponding to the assets.
      */
     function _convertToShares(uint256 assets, Math.Rounding rounding) internal view returns (uint256 shares) {
-        if (totalAssets() == 0 && totalSupply() == 0) {
-            shares = assets;
-        } else {
-            shares = assets.mulDiv(totalSupply(), totalAssets(), rounding);
-        }
+        shares = assets.mulDiv(totalSupply() + 10 ** _decimalsOffset(), totalAssets() + 1, rounding);
     }
 
     /**
