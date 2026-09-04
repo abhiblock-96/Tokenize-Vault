@@ -1,349 +1,409 @@
-# ERC-4626 Vault
+# Tokenize Vault
 
-An educational implementation of the **ERC-4626 Tokenized Vault Standard** written in Solidity.
+A from-scratch implementation of the **ERC-4626 Tokenized Vault Standard** in Solidity, built with **Foundry**.
 
-The purpose of this project is to understand how ERC-4626 vaults work internally, including asset/share accounting, conversion formulas, rounding, deposits, withdrawals, minting, and redeeming.
+The project focuses on understanding and implementing the core mechanics of tokenized vaults, including asset/share accounting, exchange-rate calculations, rounding behavior, deposits, withdrawals, minting, redeeming, and protection against the **ERC-4626 inflation/donation attack** using virtual assets and virtual shares.
 
-> ⚠️ **Educational Project — Not Production Ready**
+> **Educational Project**
 >
-> This implementation intentionally focuses on understanding ERC-4626 mechanics and currently contains known security limitations, including vulnerability to **donation/inflation attacks**.
->
-> Do **not** use this implementation to manage real funds.
+> This project is intended for learning, experimentation, and smart contract security research. It has not been audited and should not be used to manage real funds.
 
 ---
 
-## 🎯 Purpose
+## Overview
 
-This project was built to understand ERC-4626 by implementing the core vault functionality rather than simply using an existing implementation.
-
-The vault accepts an underlying ERC-20 asset and issues vault shares representing a user's proportional ownership of the vault's assets.
+ERC-4626 standardizes tokenized vault interfaces for protocols that accept an underlying ERC-20 asset and issue shares representing a proportional claim on the vault's assets.
 
 At a high level:
 
 ```text
-User
- │
- │ deposit assets
- ▼
-┌─────────────────────┐
-│     ERC-4626 Vault  │
-│                     │
-│  Underlying Assets  │
-│         ↕           │
-│    Vault Shares     │
-└─────────────────────┘
- │
- │ shares
- ▼
-User
+                    ERC-20 Assets
+                         │
+                         ▼
+                   ┌─────────────┐
+                   │    Vault    │
+                   └─────────────┘
+                         │
+                         ▼
+                    Vault Shares
 ```
 
----
-
-## 🧠 ERC-4626 Concepts Covered
-
-This implementation explores the main ERC-4626 operations:
-
-| Function            | Purpose                                                  |
-| ------------------- | -------------------------------------------------------- |
-| `deposit()`         | Deposit assets and receive shares                        |
-| `mint()`            | Request a specific number of shares by depositing assets |
-| `withdraw()`        | Withdraw a specific amount of assets by burning shares   |
-| `redeem()`          | Burn a specific amount of shares to receive assets       |
-| `convertToShares()` | Convert assets into shares                               |
-| `convertToAssets()` | Convert shares into assets                               |
-| `previewDeposit()`  | Preview shares received from a deposit                   |
-| `previewMint()`     | Preview assets required to mint shares                   |
-| `previewWithdraw()` | Preview shares required for withdrawal                   |
-| `previewRedeem()`   | Preview assets received from redeeming shares            |
-| `totalAssets()`     | Return assets currently held by the vault                |
-| `maxDeposit()`      | Maximum assets that can be deposited                     |
-| `maxMint()`         | Maximum shares that can be minted                        |
-| `maxWithdraw()`     | Maximum assets an owner can withdraw                     |
-| `maxRedeem()`       | Maximum shares an owner can redeem                       |
-
----
-
-## 📐 Asset / Share Accounting
-
-The core accounting mechanism is based on the relationship between:
+The vault maintains an exchange relationship between **assets** and **shares**.
 
 ```text
-totalAssets
-      │
-      ▼
-┌───────────────┐
-│     Vault     │
-│               │
-│ Assets        │
-│ Shares        │
-└───────────────┘
-      │
-      ▼
-totalSupply
+Assets  ↔  Shares
 ```
 
-The basic conversion formulas are:
+The exchange rate changes as the vault's asset balance and share supply change.
+
+---
+
+## Features
+
+* ERC-4626 tokenized vault implementation
+* ERC-20 underlying asset support
+* Asset/share conversion
+* Deposit and withdrawal functionality
+* Mint and redeem functionality
+* ERC-4626 preview functions
+* Correct rounding direction for conversions
+* Virtual asset and virtual share accounting
+* Inflation/donation attack mitigation
+* Unit testing with Foundry
+* Fuzz testing
+* Invariant testing
+* Security-focused test cases
+
+---
+
+## ERC-4626 Operations
+
+| Operation           | Description                                    |
+| ------------------- | ---------------------------------------------- |
+| `deposit()`         | Deposits assets and mints shares               |
+| `mint()`            | Mints a specified number of shares             |
+| `withdraw()`        | Withdraws a specified amount of assets         |
+| `redeem()`          | Burns shares and withdraws assets              |
+| `convertToShares()` | Converts assets to shares                      |
+| `convertToAssets()` | Converts shares to assets                      |
+| `previewDeposit()`  | Previews shares received for a deposit         |
+| `previewMint()`     | Previews assets required to mint shares        |
+| `previewWithdraw()` | Previews shares required for a withdrawal      |
+| `previewRedeem()`   | Previews assets received from redeeming shares |
+| `totalAssets()`     | Returns the vault's underlying assets          |
+| `maxDeposit()`      | Returns the maximum deposit amount             |
+| `maxMint()`         | Returns the maximum mint amount                |
+| `maxWithdraw()`     | Returns the maximum withdrawable assets        |
+| `maxRedeem()`       | Returns the maximum redeemable shares          |
+
+---
+
+# Asset & Share Accounting
+
+The core of ERC-4626 is the relationship between the vault's total assets and total shares.
+
+Conceptually:
 
 ### Assets → Shares
 
 ```text
-shares = assets × totalSupply / totalAssets
+shares = assets × totalShares / totalAssets
 ```
 
 ### Shares → Assets
 
 ```text
-assets = shares × totalAssets / totalSupply
+assets = shares × totalAssets / totalShares
 ```
 
-The implementation also uses different rounding directions depending on the operation.
+In practice, integer arithmetic requires careful handling of rounding.
 
-For example:
+The implementation therefore distinguishes between operations where rounding **down** or **up** is appropriate.
 
-* Deposits generally round **down**
-* Minting generally rounds **up**
-* Withdrawals generally round **up**
-* Redeeming generally rounds **down**
+```text
+Deposit   → round down
+Mint      → round up
+Withdraw  → round up
+Redeem    → round down
+```
 
-This is important because incorrect rounding can create value leakage between users and the vault.
+Incorrect rounding can result in value leakage between users and the vault.
 
 ---
 
-## 🔐 Initial Vault State
+# Inflation / Donation Attack
 
-When both:
+A significant security consideration in ERC-4626 vaults is the **inflation attack**, also referred to as the **donation attack**.
 
-```text
-totalAssets = 0
-totalSupply = 0
-```
-
-the implementation uses a **1:1 exchange rate**.
-
-Therefore:
-
-```text
-1 asset → 1 share
-```
-
-for the initial deposit.
-
-This avoids division by zero and establishes the initial share price.
-
----
-
-# ⚠️ Known Security Issue
-
-## Donation / Inflation Attack
-
-The current implementation is vulnerable to the **ERC-4626 donation/inflation attack**.
-
-The vulnerability comes from the vault determining its exchange rate using its current asset balance:
-
-```text
-exchange rate ≈ totalAssets / totalSupply
-```
-
-Because `totalAssets()` is based on the underlying token balance held by the vault, assets can potentially be transferred directly to the vault without minting shares.
-
-This changes:
-
-```text
-totalAssets
-```
-
-without changing:
-
-```text
-totalSupply
-```
-
-which changes the exchange rate.
-
-### Simplified example
-
-Suppose:
-
-```text
-Vault:
-1 asset
-1 share
-```
-
-Exchange rate:
-
-```text
-1 asset / 1 share
-```
-
-An attacker can donate additional assets directly to the vault.
+An ERC-20 token can be transferred directly to the vault without going through the vault's deposit mechanism.
 
 For example:
 
 ```text
-10 assets
-1 share
+Initial State
+
+Assets = 1
+Shares = 1
 ```
 
-Now the exchange rate becomes:
+An attacker can directly donate assets:
 
 ```text
-10 assets / 1 share
+Donation
+
+Assets = 101
+Shares = 1
 ```
 
-A subsequent user's deposit can therefore receive significantly fewer shares than expected.
+The vault's asset/share ratio has now changed without any additional shares being issued.
 
-Depending on the exact amounts and rounding, the attacker can potentially extract value from the victim's deposit.
+For a subsequent small deposit, integer division and rounding can cause the depositor to receive substantially fewer shares than expected.
 
----
-
-## Why This Matters
-
-This demonstrates an important property of ERC-4626:
-
-> **The underlying asset balance is not necessarily equivalent to assets that were deposited through the vault.**
-
-Direct token transfers can change the vault's accounting state without creating corresponding shares.
-
-This is one of the important security considerations when implementing tokenized vaults.
+This is particularly relevant when a vault has very low initial liquidity.
 
 ---
 
-# 🛡️ Mitigation
+# Mitigation: Virtual Assets & Virtual Shares
 
-This repository intentionally keeps the vulnerable implementation available for learning.
+This implementation incorporates **virtual assets and virtual shares** into the conversion calculations.
 
-Potential approaches for mitigating donation/inflation attacks include techniques such as:
-
-* Virtual assets and virtual shares
-* Minimum initial liquidity
-* Increased share precision
-* Dead shares
-* Carefully designed initial deposit mechanisms
-* Accounting systems that distinguish managed assets from arbitrary token transfers
-
-The correct mitigation depends on the vault's design and economic model.
-
-The goal of this project is to first understand **why the vulnerability exists** before implementing a mitigation.
-
----
-
-# 🧪 Security Learning Path
-
-The intended progression for this project is:
+Conceptually:
 
 ```text
-ERC-4626 Implementation
-        │
-        ▼
-Understand Share Accounting
-        │
-        ▼
-Understand Rounding
-        │
-        ▼
-Identify Donation Attack
-        │
-        ▼
-Reproduce Attack
-        │
-        ▼
-Design Mitigation
-        │
-        ▼
-Test Mitigation
+effectiveAssets = totalAssets + virtualAssets
+
+effectiveShares = totalShares + virtualShares
 ```
 
-Future versions can therefore demonstrate:
+The exchange-rate calculation therefore operates on an adjusted accounting base rather than relying exclusively on the vault's real balances.
 
 ```text
-V1 → Basic ERC-4626
-V2 → Donation / Inflation Attack
-V3 → Mitigation
-V4 → Security Tests & Fuzzing
+                  Real Assets
+                       │
+                       ▼
+              ┌─────────────────┐
+              │ + Virtual Assets│
+              └─────────────────┘
+                       │
+                       ▼
+                Effective Assets
+                       │
+                       │
+                       ▼
+                 Exchange Rate
+                       ▲
+                       │
+                       │
+                Effective Shares
+                       ▲
+              ┌─────────────────┐
+              │ + Virtual Shares│
+              └─────────────────┘
+                       ▲
+                       │
+                  Real Shares
+```
+
+This provides a non-zero virtual baseline and makes manipulating the exchange rate through direct donations substantially more difficult.
+
+### Security objective
+
+The mitigation is designed to reduce the attacker's ability to:
+
+1. Establish a favorable initial share price.
+2. Inflate the vault's asset/share ratio through direct donations.
+3. Cause a subsequent depositor to receive an unexpectedly small number of shares.
+4. Capture value through rounding and share-price manipulation.
+
+---
+
+# Testing
+
+The project uses **Foundry** for comprehensive smart contract testing.
+
+Testing focuses on both normal ERC-4626 behavior and adversarial scenarios.
+
+### Core Tests
+
+* Initial vault state
+* Deposits
+* Withdrawals
+* Minting
+* Redeeming
+* Asset/share conversions
+* Preview functions
+* Maximum operation limits
+* Rounding behavior
+
+### Security Tests
+
+* Direct asset donations
+* Exchange-rate changes after donations
+* Small deposits
+* Large donations
+* Inflation attack scenarios
+* Virtual asset/share accounting
+* Share dilution
+* Edge cases around zero assets and shares
+
+### Property Testing
+
+The project also uses:
+
+* **Fuzz testing**
+* **Invariant testing**
+
+These tests help validate accounting properties across a wide range of inputs instead of relying only on fixed examples.
+
+---
+
+# Project Structure
+
+```text
+Tokenize-Vault/
+│
+├── src/
+│   └── ERC4626.sol
+│
+├── test/
+│   ├── helper/
+│   └── ERC4626UnitTest.t.sol
+│
+├── lib/
+│
+├── .github/
+│   └── workflows/
+│
+├── foundry.toml
+├── foundry.lock
+├── .gitmodules
+├── .gitignore
+└── README.md
 ```
 
 ---
 
-# 🧰 Tech Stack
+# Technology Stack
 
 * **Solidity**
 * **Foundry**
 * **OpenZeppelin Contracts**
 * **ERC-20**
 * **ERC-4626**
-* **Foundry Testing**
+* **Forge**
 * **Fuzz Testing**
+* **Invariant Testing**
 
 ---
 
-# 📂 Project Goals
+# Getting Started
 
-The main learning objectives are:
+## Prerequisites
 
-* Understand ERC-4626 architecture
-* Implement vault accounting from scratch
-* Understand asset/share exchange rates
-* Understand rounding direction
-* Understand `preview` functions
-* Understand the relationship between `totalAssets` and `totalSupply`
-* Study donation/inflation attacks
-* Practice smart contract security analysis
-* Eventually implement and test mitigations
+Install:
 
----
+* [Foundry](https://book.getfoundry.sh/)
+* Git
 
-# ⚠️ Security Disclaimer
+## Clone
 
-This repository is intended **strictly for educational purposes**.
-
-The implementation has known security limitations and has **not been audited**.
-
-Do not deploy this contract to mainnet or use it to custody real assets.
-
----
-
-## 📚 What I Learned
-
-This project helped me understand that implementing a tokenized vault is not simply about implementing the ERC-4626 interface.
-
-The difficult part is maintaining correct economic accounting between:
-
-```text
-Assets ↔ Shares
+```bash
+git clone https://github.com/abhiblock-96/Tokenize-Vault.git
+cd Tokenize-Vault
 ```
 
-while handling:
+## Install Dependencies
 
-* Rounding
-* Initial deposits
-* Zero states
-* Direct token transfers
-* Exchange-rate manipulation
-* Share dilution
-* Withdrawals and redemptions
-* Adversarial users
+```bash
+forge install
+```
 
-The donation/inflation attack is particularly important because the Solidity implementation can appear logically correct while the **economic model itself is exploitable**.
+## Build
+
+```bash
+forge build
+```
+
+## Run Tests
+
+```bash
+forge test
+```
+
+## Run Tests With Verbosity
+
+```bash
+forge test -vv
+```
+
+## Run a Specific Test
+
+```bash
+forge test --match-test <testName>
+```
 
 ---
 
-## 🚀 Future Improvements
+# Security Considerations
 
-* [ ] Add comprehensive Foundry unit tests
-* [ ] Add fuzz tests
-* [ ] Reproduce donation/inflation attack
-* [ ] Add invariant tests
-* [ ] Implement mitigation
-* [ ] Compare vulnerable vs protected versions
-* [ ] Add gas analysis
-* [ ] Test against edge cases
-* [ ] Compare implementation with OpenZeppelin's ERC-4626 implementation
+Although this implementation includes protection against the ERC-4626 inflation/donation attack through virtual assets and virtual shares, it should **not** be considered production-ready.
+
+A production vault requires additional consideration for factors such as:
+
+* Rounding edge cases
+* Fee mechanisms
+* Rebasing assets
+* Fee-on-transfer tokens
+* Unexpected token donations
+* Asset accounting
+* Share-price manipulation
+* Access control
+* Strategy integrations
+* External protocol interactions
+* Upgradeability, if applicable
+* Gas efficiency
+* Formal verification and independent auditing
+
+The purpose of this repository is to understand these mechanisms at the implementation level and explore their security implications.
+
+---
+
+# Learning Objectives
+
+This project was built to develop a deeper understanding of:
+
+```text
+ERC-4626
+   │
+   ├── Asset Accounting
+   │
+   ├── Share Accounting
+   │
+   ├── Exchange Rates
+   │
+   ├── Rounding
+   │
+   ├── Deposits
+   │
+   ├── Withdrawals
+   │
+   ├── Minting
+   │
+   ├── Redeeming
+   │
+   └── Security
+          │
+          └── Inflation / Donation Attack
+                       │
+                       ▼
+              Virtual Assets
+                       +
+              Virtual Shares
+                       │
+                       ▼
+                  Mitigation
+```
+
+The primary goal is not simply to implement the ERC-4626 interface, but to understand the **economic and security properties behind the standard**.
+
+---
+
+# References
+
+* [ERC-4626 — Tokenized Vault Standard](https://eips.ethereum.org/EIPS/eip-4626)
+* [OpenZeppelin Contracts](https://docs.openzeppelin.com/contracts/)
+* [Foundry Book](https://book.getfoundry.sh/)
+
+---
+
+# Disclaimer
+
+This repository is provided for **educational and research purposes only**.
+
+The smart contracts have not undergone an independent security audit and should not be deployed with real or production funds.
 
 ---
 
 ## 👨‍💻 Author
 
 **Abhishek Maurya**
-
