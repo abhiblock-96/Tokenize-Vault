@@ -52,7 +52,7 @@ contract BaseContract is Test {
 
         usdt.mint(user1, 2000);
         usdt.mint(user2, 2000);
-        usdt.mint(hacker, 2000);
+        usdt.mint(hacker, 10001);
     }
 
     /**

