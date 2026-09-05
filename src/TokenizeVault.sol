@@ -7,11 +7,11 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /**
- * @title ERC4626
+ * @title TokenizeVault
  * @notice ERC-4626 tokenized vault implementation.
  * @dev Deposited assets are held directly by this contract.
  */
-contract ERC4626 is ERC20, IERC4626 {
+contract TokenizeVault is ERC20, IERC4626 {
     IERC20 private immutable s_asset;
 
     uint8 private immutable underlyingDecimals;
@@ -21,23 +21,11 @@ contract ERC4626 is ERC20, IERC4626 {
     /// @notice The provided asset address is invalid.
     error InvalidAssetAddress();
 
-    /// @notice The calculated number of shares is zero.
-    error ZeroSharesNotAllowed();
-
-    /// @notice The calculated amount of assets is zero.
-    error ZeroAssetsNotAllowed();
-
     /// @notice The provided address is the zero address.
     error ZeroAddressNotAllowed();
 
     /// @notice The requested amount exceeds the maximum allowed amount.
     error AmountGreaterThanMaxAmount();
-
-    /// @notice The underlying asset transfer failed.
-    error TransferFailed();
-
-    /// @notice The requested asset amount is insufficient.
-    error InsufficientAssets();
 
     /// @notice The requested share amount is insufficient.
     error InsufficientShares();
@@ -197,8 +185,7 @@ contract ERC4626 is ERC20, IERC4626 {
 
         uint256 shares = previewDeposit(assets);
 
-        bool success = s_asset.transferFrom(msg.sender, address(this), assets);
-        if (!success) revert TransferFailed();
+        SafeERC20.safeTransferFrom(s_asset, msg.sender, address(this), assets);
 
         _mint(receiver, shares);
 
@@ -216,8 +203,7 @@ contract ERC4626 is ERC20, IERC4626 {
 
         uint256 assets = previewMint(shares);
 
-        bool success = s_asset.transferFrom(msg.sender, address(this), assets);
-        if (!success) revert TransferFailed();
+        SafeERC20.safeTransferFrom(s_asset, msg.sender, address(this), assets);
 
         _mint(receiver, shares);
 
@@ -241,8 +227,7 @@ contract ERC4626 is ERC20, IERC4626 {
 
         _burn(owner, shares);
 
-        bool success = s_asset.transfer(receiver, assets);
-        if (!success) revert TransferFailed();
+        SafeERC20.safeTransfer(s_asset, receiver, assets);
 
         emit Withdraw(msg.sender, receiver, owner, assets, shares);
 
@@ -264,8 +249,7 @@ contract ERC4626 is ERC20, IERC4626 {
 
         _burn(owner, shares);
 
-        bool success = s_asset.transfer(receiver, assets);
-        if (!success) revert TransferFailed();
+        SafeERC20.safeTransfer(s_asset, receiver, assets);
 
         emit Withdraw(msg.sender, receiver, owner, assets, shares);
 

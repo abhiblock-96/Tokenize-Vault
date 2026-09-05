@@ -2,18 +2,18 @@
 pragma solidity ^0.8.4;
 
 import {BaseContract} from "test/helper/BaseContract.t.sol";
-import {ERC4626} from "src/ERC4626.sol";
+import {TokenizeVault} from "src/TokenizeVault.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 
 /**
- * @title ERC4626UnitTest
+ * @title UnitTest
  * @notice Unit tests for the ERC4626 vault implementation.
  * @dev Covers vault metadata, asset/share conversions, deposit and mint limits,
  *      preview functions, deposits, mints, withdrawals, redemptions,
  *      exchange-rate behavior, and inflation-attack mitigation.
  */
-contract ERC4626UnitTest is BaseContract {
+contract UnitTest is BaseContract {
     /**
      * @notice Verifies that `asset()` returns the address of the vault's
      *         underlying asset.
@@ -173,7 +173,7 @@ contract ERC4626UnitTest is BaseContract {
      */
     function test_deposit_RevertsIfReceiverIsZeroAddress() external {
         vm.prank(user1);
-        vm.expectRevert(ERC4626.ZeroAddressNotAllowed.selector);
+        vm.expectRevert(TokenizeVault.ZeroAddressNotAllowed.selector);
         tokenVault.deposit(depositAmt, address(0));
     }
 
@@ -183,7 +183,7 @@ contract ERC4626UnitTest is BaseContract {
      */
     function test_deposit_RevertsIfAssetsExceedMaxAmount() external {
         vm.prank(user1);
-        vm.expectRevert(ERC4626.AmountGreaterThanMaxAmount.selector);
+        vm.expectRevert(TokenizeVault.AmountGreaterThanMaxAmount.selector);
         tokenVault.deposit(type(uint256).max, user2);
     }
 
@@ -222,7 +222,7 @@ contract ERC4626UnitTest is BaseContract {
      *         zero address.
      */
     function test_mint_RevertsIfReceiverIsZeroAddress() external {
-        vm.expectRevert(ERC4626.ZeroAddressNotAllowed.selector);
+        vm.expectRevert(TokenizeVault.ZeroAddressNotAllowed.selector);
         tokenVault.mint(mintAmt, address(0));
     }
 
@@ -231,7 +231,7 @@ contract ERC4626UnitTest is BaseContract {
      *         exceeds the maximum permitted mint amount.
      */
     function test_mint_RevertsIfSharesExceedMaxAmount() external {
-        vm.expectRevert(ERC4626.AmountGreaterThanMaxAmount.selector);
+        vm.expectRevert(TokenizeVault.AmountGreaterThanMaxAmount.selector);
         tokenVault.mint(type(uint256).max, user1);
     }
 
@@ -278,7 +278,7 @@ contract ERC4626UnitTest is BaseContract {
         _deposit(user1, depositAmt);
 
         vm.prank(user1);
-        vm.expectRevert(ERC4626.ZeroAddressNotAllowed.selector);
+        vm.expectRevert(TokenizeVault.ZeroAddressNotAllowed.selector);
 
         tokenVault.withdraw(withdrawlAmt, address(0), user1);
     }
@@ -291,7 +291,7 @@ contract ERC4626UnitTest is BaseContract {
         _deposit(user1, depositAmt);
 
         vm.prank(user1);
-        vm.expectRevert(ERC4626.ZeroAddressNotAllowed.selector);
+        vm.expectRevert(TokenizeVault.ZeroAddressNotAllowed.selector);
 
         tokenVault.withdraw(withdrawlAmt, user2, address(0));
     }
@@ -303,7 +303,7 @@ contract ERC4626UnitTest is BaseContract {
     function test_withdraw_RevertsIfAssetsExceedAvailableShares() external {
         _deposit(user1, depositAmt);
 
-        vm.expectRevert(ERC4626.InsufficientShares.selector);
+        vm.expectRevert(TokenizeVault.InsufficientShares.selector);
         _withdraw(600);
     }
 
@@ -383,7 +383,7 @@ contract ERC4626UnitTest is BaseContract {
         _deposit(user1, depositAmt);
 
         vm.prank(user1);
-        vm.expectRevert(ERC4626.ZeroAddressNotAllowed.selector);
+        vm.expectRevert(TokenizeVault.ZeroAddressNotAllowed.selector);
 
         tokenVault.redeem(redeemAmt, address(0), user1);
     }
@@ -396,7 +396,7 @@ contract ERC4626UnitTest is BaseContract {
         _deposit(user1, depositAmt);
 
         vm.prank(user1);
-        vm.expectRevert(ERC4626.ZeroAddressNotAllowed.selector);
+        vm.expectRevert(TokenizeVault.ZeroAddressNotAllowed.selector);
 
         tokenVault.redeem(redeemAmt, user2, address(0));
     }

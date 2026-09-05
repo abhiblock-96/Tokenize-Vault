@@ -2,7 +2,7 @@
 pragma solidity ^0.8.4;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC4626} from "src/ERC4626.sol";
+import {TokenizeVault} from "src/TokenizeVault.sol";
 import {MockAsset} from "test/mock/MockAsset.sol";
 
 /**
@@ -12,8 +12,8 @@ import {MockAsset} from "test/mock/MockAsset.sol";
  * @dev Inherits from Foundry's Test contract to access cheatcodes and testing utilities.
  */
 contract BaseContract is Test {
-    /// @notice ERC4626 vault instance used throughout the tests.
-    ERC4626 internal tokenVault;
+    /// @notice TokenizeVault vault instance used throughout the tests.
+    TokenizeVault internal tokenVault;
 
     /// @notice Mock usdt asset used as the underlying asset of the vault.
     MockAsset internal usdt;
@@ -48,7 +48,7 @@ contract BaseContract is Test {
      */
     function setUp() public {
         usdt = new MockAsset();
-        tokenVault = new ERC4626(address(usdt));
+        tokenVault = new TokenizeVault(address(usdt));
 
         usdt.mint(user1, 2000);
         usdt.mint(user2, 2000);
